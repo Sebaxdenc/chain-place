@@ -1,0 +1,25 @@
+[profile.default]
+src = "src"
+out = "out"
+libs = ["lib"]
+test = "test"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ESTO ES LO IMPORTANTE.
+# Activa el entorno de ejecución de Monad en forge/cast/chisel: modelo de gas,
+# precios de opcodes (páginas de storage de 128 slots), reglas de transacción,
+# precompilados y límite de contrato de 128 KB.
+#
+# Sin esta línea, `forge test --gas-report` te da el gas de ETHEREUM, que para
+# storage es ~4x más barato que Monad. Fijarías un gas limit demasiado bajo y
+# TODAS tus transacciones fallarían en la demo.
+# Requiere Foundry >= 1.8.0.
+# ─────────────────────────────────────────────────────────────────────────────
+network = "monad"
+
+optimizer = true
+optimizer_runs = 1000
+
+[rpc_endpoints]
+monad_testnet = "https://testnet-rpc.monad.xyz"
+monad_mainnet = "https://rpc.monad.xyz"

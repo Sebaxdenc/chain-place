@@ -33,10 +33,10 @@ contract BlitzCanvasTest is Test {
         vm.prank(alice);
         canvas.paint(42, 7);
 
-        (uint8 color, address painter, uint48 at) = canvas.pixel(42);
+        (uint8 color, address painter, uint48 paintedAt) = canvas.pixel(42);
         assertEq(color, 7, "color");
         assertEq(painter, alice, "painter");
-        assertEq(at, uint48(block.timestamp), "timestamp");
+        assertEq(paintedAt, uint48(block.timestamp), "timestamp");
     }
 
     function test_RepaintOverwritesPainter() public {

@@ -4,3 +4,7 @@ broadcast/
 lib/
 .env
 docs/
+
+# Artefacto de `forge install`. La librería se instala con
+# `forge install --no-git foundry-rs/forge-std@v1.11.0` y no se versiona.
+foundry.lock

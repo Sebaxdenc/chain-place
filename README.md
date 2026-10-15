@@ -156,9 +156,14 @@ foundryup
 forge --version          # >= 1.8.0
 
 cd contracts
-forge install foundry-rs/forge-std    # la lib no está versionada en el repo
+forge install --no-git foundry-rs/forge-std@v1.11.0
 forge test -vv                        # 12 tests + reporte de gas
 ```
+
+> El `--no-git` importa: sin él, `forge install` registra la librería como
+> **submódulo de git** y la deja lista para commit, lo que choca con tener
+> `lib/` en el `.gitignore`. La versión va fijada en el comando, así que la
+> instalación es reproducible sin necesidad de versionar la librería.
 
 ## Red
 

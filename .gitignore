@@ -2,3 +2,9 @@ node_modules/
 dist/
 .env
 .DS_Store
+
+# `forge install` SIN --no-git registra las librerías como submódulos y crea
+# esto en la raíz. Nosotros no usamos submódulos (lib/ está en .gitignore y la
+# librería se instala con `forge install --no-git`), así que si aparece es por
+# haber corrido el comando sin el flag.
+.gitmodules

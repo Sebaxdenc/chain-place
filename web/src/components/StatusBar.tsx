@@ -1,3 +1,4 @@
+import { CONFIG } from "../config";
 import type { PainterState } from "../lib/painter";
 import { formatMon } from "../lib/painter";
 import type { RelayStats, RelayStatus } from "../lib/relay";
@@ -12,6 +13,14 @@ interface Props {
 }
 
 const short = (address: string) => `${address.slice(0, 6)}…${address.slice(-4)}`;
+
+const relayHost = (() => {
+  try {
+    return new URL(CONFIG.relayUrl).host;
+  } catch {
+    return CONFIG.relayUrl;
+  }
+})();
 
 export function StatusBar({
   painter,
@@ -53,6 +62,14 @@ export function StatusBar({
           <span>{stats.clients} conectados</span>
         </div>
       )}
+
+      {/* De dónde vienen los datos. Con `?relay=` se cambia sin recompilar, y
+          sin relay se habla directo con Monad, así que conviene verlo. */}
+      <div className="status-row muted small">
+        <span className="mono">
+          {CONFIG.mode === "relay" ? relayHost : "directo · sin relay"}
+        </span>
+      </div>
 
       {origin === "nueva" && painter?.paintsLeft === 0 && (
         <div className="banner">

@@ -1,0 +1,205 @@
+:root {
+  --bg: #0f0f12;
+  --panel: #17171c;
+  --line: #2a2a33;
+  --text: #e8e8ee;
+  --muted: #8a8a99;
+  --accent: #7c5cff;
+  --warn: #ffb020;
+  --error: #ff5c5c;
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  /* Evita el "pull to refresh" y el rebote al pintar cerca de los bordes */
+  overscroll-behavior: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.mono {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+}
+.muted {
+  color: var(--muted);
+}
+.small {
+  font-size: 11px;
+}
+.warn {
+  color: var(--warn);
+}
+
+/* ── Barra de estado ─────────────────────────────────────────────────────── */
+.status {
+  flex: 0 0 auto;
+  padding: 10px 12px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+}
+
+.status-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 20px;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+}
+.dot-conectado {
+  background: #3ddc84;
+}
+.dot-conectando {
+  background: var(--warn);
+}
+.dot-desconectado {
+  background: var(--error);
+}
+
+.pending {
+  color: var(--accent);
+}
+.latency {
+  color: #3ddc84;
+  font-variant-numeric: tabular-nums;
+}
+
+.banner {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: #241f33;
+  border: 1px solid var(--accent);
+  font-size: 12px;
+  line-height: 1.5;
+  word-break: break-all;
+  -webkit-user-select: text;
+  user-select: text;
+}
+.banner.error {
+  background: #2a1b1b;
+  border-color: var(--error);
+}
+
+/* ── Lienzo ──────────────────────────────────────────────────────────────── */
+.canvas-area {
+  flex: 1 1 auto;
+  position: relative;
+  min-height: 0;
+}
+
+.canvas-scroll {
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+  display: grid;
+  place-items: center;
+  /* El pan lo hace el scroll nativo (con inercia incluida); desactivamos el
+     doble-tap-zoom del navegador para que no pelee con el toque de pintar. */
+  touch-action: pan-x pan-y;
+  background: #000;
+}
+
+.pixel-canvas {
+  /* Esto es lo que mantiene los píxeles cuadrados en vez de borrosos */
+  image-rendering: pixelated;
+  display: block;
+  touch-action: none;
+  box-shadow: 0 0 0 1px var(--line);
+}
+
+.zoom-controls {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  display: flex;
+  gap: 6px;
+}
+
+.zoom-btn {
+  background: rgba(23, 23, 28, 0.92);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 7px 11px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.zoom-btn.active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* ── Paleta ──────────────────────────────────────────────────────────────── */
+.palette {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 5px;
+  padding: 10px;
+  background: var(--panel);
+  border-top: 1px solid var(--line);
+  /* Respeta la zona del gesto de inicio en iOS */
+  padding-bottom: calc(10px + env(safe-area-inset-bottom));
+}
+
+.swatch {
+  aspect-ratio: 1;
+  border: 2px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  padding: 0;
+  outline-offset: 2px;
+}
+.swatch.selected {
+  border-color: var(--text);
+  transform: scale(1.08);
+}
+/* El blanco necesita borde propio o es invisible sobre el panel */
+.swatch:first-child {
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+
+/* ── Pantalla de configuración ───────────────────────────────────────────── */
+.setup {
+  padding: 24px;
+  max-width: 520px;
+  margin: 0 auto;
+  line-height: 1.6;
+}
+.setup h1 {
+  font-size: 20px;
+}
+.setup code {
+  background: var(--panel);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: ui-monospace, monospace;
+  font-size: 13px;
+}

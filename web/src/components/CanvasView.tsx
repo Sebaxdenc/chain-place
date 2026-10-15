@@ -3,24 +3,25 @@ import { CONFIG, xyToIdx } from "../config";
 
 interface Props {
   onCanvasReady: (canvas: HTMLCanvasElement) => void;
-  onPixelTap: (idx: number) => void;
+  selected: number | null;
+  onSelect: (idx: number | null) => void;
 }
 
-/** Niveles de zoom en píxeles de pantalla por píxel del lienzo.
- *  El primero se calcula para que el lienzo entero quepa. */
-const ZOOM_STEPS = [6, 12, 24] as const;
+/** Zoom al que se salta al tocar desde la vista general, en píxeles de
+ *  pantalla por píxel del lienzo. A 14 el objetivo es cómodo para un dedo. */
+const ZOOM_IN = 14;
+const ZOOM_LEVELS = [14, 28] as const;
 
-export function CanvasView({ onCanvasReady, onPixelTap }: Props) {
+export function CanvasView({ onCanvasReady, selected, onSelect }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const pointerDown = useRef<{ x: number; y: number; t: number } | null>(null);
 
   const [fitZoom, setFitZoom] = useState(3);
   const [zoom, setZoom] = useState(3);
-  const [userZoomed, setUserZoomed] = useState(false);
 
-  // El zoom "fit" depende del ancho de la pantalla, así que se recalcula al
-  // rotar el teléfono. Si el usuario ya tocó el zoom, no le cambiamos la vista.
+  const zoomedIn = zoom > fitZoom;
+
   useEffect(() => {
     const element = containerRef.current;
     if (!element) return;
@@ -33,38 +34,48 @@ export function CanvasView({ onCanvasReady, onPixelTap }: Props) {
         ),
       );
       setFitZoom(next);
-      if (!userZoomed) setZoom(next);
+      setZoom((current) => (current <= next ? next : current));
     };
 
     recompute();
     const observer = new ResizeObserver(recompute);
     observer.observe(element);
     return () => observer.disconnect();
-  }, [userZoomed]);
+  }, []);
 
   useEffect(() => {
     if (canvasRef.current) onCanvasReady(canvasRef.current);
   }, [onCanvasReady]);
 
-  /** Cambia el zoom manteniendo centrado el mismo punto del lienzo. Sin esto,
-   *  ampliar te manda a una esquina al azar y es desorientador. */
+  /** Deja un píxel concreto en el centro de la pantalla. */
+  const centerOn = useCallback((idx: number, atZoom: number) => {
+    const element = containerRef.current;
+    if (!element) return;
+    const x = idx % CONFIG.width;
+    const y = Math.floor(idx / CONFIG.width);
+    element.scrollLeft = x * atZoom + atZoom / 2 - element.clientWidth / 2;
+    element.scrollTop = y * atZoom + atZoom / 2 - element.clientHeight / 2;
+  }, []);
+
   const changeZoom = useCallback(
     (next: number) => {
       const element = containerRef.current;
-      setUserZoomed(true);
       if (!element) {
         setZoom(next);
         return;
       }
-      const centerX = (element.scrollLeft + element.clientWidth / 2) / zoom;
-      const centerY = (element.scrollTop + element.clientHeight / 2) / zoom;
+      // Si hay un píxel elegido, el zoom gira alrededor de él; si no, del
+      // centro de la vista actual.
+      const anchor =
+        selected ??
+        xyToIdx(
+          Math.floor((element.scrollLeft + element.clientWidth / 2) / zoom),
+          Math.floor((element.scrollTop + element.clientHeight / 2) / zoom),
+        );
       setZoom(next);
-      requestAnimationFrame(() => {
-        element.scrollLeft = centerX * next - element.clientWidth / 2;
-        element.scrollTop = centerY * next - element.clientHeight / 2;
-      });
+      requestAnimationFrame(() => centerOn(anchor, next));
     },
-    [zoom],
+    [selected, zoom, centerOn],
   );
 
   const handlePointerDown = (event: React.PointerEvent) => {
@@ -72,58 +83,95 @@ export function CanvasView({ onCanvasReady, onPixelTap }: Props) {
   };
 
   /**
-   * Distinguimos "toque" de "arrastre": el arrastre lo gestiona el scroll
-   * nativo del contenedor (que da inercia gratis y se siente mucho mejor que
-   * cualquier pan hecho a mano), y solo pintamos si el dedo casi no se movió.
+   * Un toque hace una de dos cosas, estilo r/place:
+   *
+   *   · desde la vista general → ACERCA a ese punto y lo elige
+   *   · ya estando cerca       → mueve la elección a ese píxel
+   *
+   * Pintar nunca ocurre aquí: hace falta pulsar el botón de confirmar. Son dos
+   * toques en vez de uno, pero a cambio no pintas donde no querías, que en un
+   * lienzo de 128 píxeles en una pantalla de teléfono pasaba todo el rato.
+   *
+   * El arrastre lo gestiona el scroll nativo (inercia gratis), así que solo
+   * reaccionamos si el dedo casi no se movió.
    */
   const handlePointerUp = (event: React.PointerEvent) => {
     const start = pointerDown.current;
     pointerDown.current = null;
     if (!start) return;
-
-    const moved = Math.hypot(event.clientX - start.x, event.clientY - start.y);
-    const elapsed = Date.now() - start.t;
-    if (moved > 10 || elapsed > 500) return;
+    if (
+      Math.hypot(event.clientX - start.x, event.clientY - start.y) > 10 ||
+      Date.now() - start.t > 500
+    ) {
+      return;
+    }
 
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    // Mapeamos con getBoundingClientRect, así funciona con cualquier zoom sin
-    // tener que replicar la transformación a mano.
+    // getBoundingClientRect ya refleja el zoom, así que no hay que replicar la
+    // transformación a mano.
     const rect = canvas.getBoundingClientRect();
     const x = Math.floor(((event.clientX - rect.left) / rect.width) * CONFIG.width);
     const y = Math.floor(((event.clientY - rect.top) / rect.height) * CONFIG.height);
     if (x < 0 || y < 0 || x >= CONFIG.width || y >= CONFIG.height) return;
 
-    onPixelTap(xyToIdx(x, y));
+    const idx = xyToIdx(x, y);
+    onSelect(idx);
+
+    if (!zoomedIn) {
+      setZoom(ZOOM_IN);
+      requestAnimationFrame(() => centerOn(idx, ZOOM_IN));
+    }
   };
 
-  const levels = [fitZoom, ...ZOOM_STEPS.filter((z) => z > fitZoom)];
+  const cursorX = selected === null ? 0 : (selected % CONFIG.width) * zoom;
+  const cursorY =
+    selected === null ? 0 : Math.floor(selected / CONFIG.width) * zoom;
 
   return (
     <div className="canvas-area">
       <div className="canvas-scroll" ref={containerRef}>
-        <canvas
-          ref={canvasRef}
-          className="pixel-canvas"
-          style={{
-            width: CONFIG.width * zoom,
-            height: CONFIG.height * zoom,
-          }}
-          onPointerDown={handlePointerDown}
-          onPointerUp={handlePointerUp}
-          onPointerCancel={() => (pointerDown.current = null)}
-        />
+        <div
+          className="canvas-stage"
+          style={{ width: CONFIG.width * zoom, height: CONFIG.height * zoom }}
+        >
+          <canvas
+            ref={canvasRef}
+            className="pixel-canvas"
+            style={{ width: CONFIG.width * zoom, height: CONFIG.height * zoom }}
+            onPointerDown={handlePointerDown}
+            onPointerUp={handlePointerUp}
+            onPointerCancel={() => (pointerDown.current = null)}
+          />
+          {selected !== null && (
+            <div
+              className="cursor"
+              style={{ left: cursorX, top: cursorY, width: zoom, height: zoom }}
+            />
+          )}
+        </div>
       </div>
 
       <div className="zoom-controls">
-        {levels.map((level) => (
+        {zoomedIn && (
+          <button
+            className="zoom-btn"
+            onClick={() => {
+              onSelect(null);
+              changeZoom(fitZoom);
+            }}
+          >
+            ⤢ todo
+          </button>
+        )}
+        {ZOOM_LEVELS.map((level) => (
           <button
             key={level}
             className={level === zoom ? "zoom-btn active" : "zoom-btn"}
             onClick={() => changeZoom(level)}
           >
-            {level === fitZoom ? "ajustar" : `${level}×`}
+            {level === ZOOM_IN ? "1×" : "2×"}
           </button>
         ))}
       </div>

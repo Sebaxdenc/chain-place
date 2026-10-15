@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CONFIG, configErrors } from "./config";
+import { PALETTE } from "./palette";
 import { CanvasRenderer } from "./lib/renderer";
 import { RelayClient, type RelayStats, type RelayStatus } from "./lib/relay";
 import { Painter, type PainterState } from "./lib/painter";
@@ -36,6 +37,7 @@ function SetupScreen({ missing }: { missing: string[] }) {
 function Canvas() {
   const [canvasEl, setCanvasEl] = useState<HTMLCanvasElement | null>(null);
   const [color, setColor] = useState(5);
+  const [selected, setSelected] = useState<number | null>(null);
   const [painterState, setPainterState] = useState<PainterState | null>(null);
   const [stats, setStats] = useState<RelayStats | null>(null);
   const [status, setStatus] = useState<RelayStatus>("conectando");
@@ -104,30 +106,40 @@ function Canvas() {
     };
   }, [canvasEl]);
 
-  const handlePixelTap = useCallback(
-    (idx: number) => {
-      const renderer = rendererRef.current;
-      const painter = painterRef.current;
-      if (!renderer || !painter || !painterState?.ready) return;
+  /** Confirma el píxel elegido. Se llama desde el botón, no desde el toque:
+   *  elegir y pintar van separados para no pintar donde no querías. */
+  const confirmPaint = useCallback(() => {
+    const renderer = rendererRef.current;
+    const painter = painterRef.current;
+    if (selected === null || !renderer || !painter || !painterState?.ready) return;
 
-      // Pintar el mismo color que ya tiene no aporta nada y gastaría gas.
-      if (renderer.colorAt(idx) === color) return;
+    const idx = selected;
 
-      // 1. Pintado optimista: el píxel aparece YA, pulsando.
-      //    El usuario no espera los ~600 ms de confirmación.
-      renderer.addPending(idx, color);
-      sentAt.current.set(idx, performance.now());
+    // Pintar el mismo color que ya tiene no aporta nada y gastaría gas.
+    if (renderer.colorAt(idx) === color) return;
+
+    // 1. Pintado optimista: el píxel aparece YA, pulsando. El usuario no
+    //    espera los ~600 ms de confirmación.
+    renderer.addPending(idx, color);
+    sentAt.current.set(idx, performance.now());
+    setPending(renderer.pendingCount());
+
+    // Soltamos la selección pero NO el zoom, para poder seguir dibujando
+    // píxeles vecinos a golpe de toque.
+    setSelected(null);
+
+    // 2. La transacción sale en paralelo. Si falla, se revierte el píxel.
+    painter.paint(idx, color).catch(() => {
+      renderer.dropPending(idx);
+      sentAt.current.delete(idx);
       setPending(renderer.pendingCount());
+    });
+  }, [selected, color, painterState?.ready]);
 
-      // 2. La transacción sale en paralelo. Si falla, se revierte el píxel.
-      painter.paint(idx, color).catch(() => {
-        renderer.dropPending(idx);
-        sentAt.current.delete(idx);
-        setPending(renderer.pendingCount());
-      });
-    },
-    [color, painterState?.ready],
-  );
+  const selectedXY =
+    selected === null
+      ? null
+      : ([selected % CONFIG.width, Math.floor(selected / CONFIG.width)] as const);
 
   return (
     <div className="app">
@@ -139,7 +151,32 @@ function Canvas() {
         lastLatencyMs={lastLatencyMs}
         origin={origin}
       />
-      <CanvasView onCanvasReady={setCanvasEl} onPixelTap={handlePixelTap} />
+
+      <CanvasView
+        onCanvasReady={setCanvasEl}
+        selected={selected}
+        onSelect={setSelected}
+      />
+
+      {selectedXY && (
+        <div className="confirm-bar">
+          <span className="mono muted">
+            ({selectedXY[0]}, {selectedXY[1]})
+          </span>
+          <button
+            className="confirm-btn"
+            style={{ background: PALETTE[color]?.hex }}
+            onClick={confirmPaint}
+            disabled={!painterState?.ready}
+          >
+            Pintar
+          </button>
+          <button className="cancel-btn" onClick={() => setSelected(null)}>
+            ✕
+          </button>
+        </div>
+      )}
+
       <Palette selected={color} onSelect={setColor} />
     </div>
   );

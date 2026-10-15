@@ -60,6 +60,19 @@ export class Painter {
 
   async init(): Promise<void> {
     await Promise.all([this.resyncNonce(), this.refreshFees(), this.refreshBalance()]);
+
+    // `refreshFees` se come sus errores, así que podríamos llegar aquí con
+    // fees a cero y marcarnos listos: cada pintada fallaría con un error
+    // confuso. Mejor reintentar hasta tenerlas.
+    for (let attempt = 0; attempt < 5 && !this.hasFees(); attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, 400 * (attempt + 1)));
+      await this.refreshFees();
+    }
+    if (!this.hasFees()) {
+      this.emit("No se pudieron obtener las fees del RPC. ¿Está bien VITE_RPC_URL?");
+      return;
+    }
+
     this.ready = true;
     this.emit();
 
@@ -115,14 +128,16 @@ export class Painter {
       this.emit();
       return hash;
     } catch (error) {
-      const message = (error as Error).message ?? String(error);
+      // Cualquier envío fallido deja un HUECO en la secuencia de nonces: ya
+      // habíamos reservado el número y nadie lo va a usar. Las transacciones
+      // siguientes quedarían con nonce futuro y se rechazarían en cascada.
+      //
+      // Antes solo resincronizábamos si el mensaje mencionaba "nonce", pero el
+      // mensaje depende del nodo y es poco fiable. Resincronizar siempre cuesta
+      // una llamada RPC solo en el camino de error, que es raro.
+      await this.resyncNonce().catch(() => {});
 
-      // Si el nonce se desincronizó (tx rechazada, otra pestaña abierta,
-      // reinicio del RPC), lo volvemos a leer de la cadena.
-      if (/nonce|already known|replacement/i.test(message)) {
-        await this.resyncNonce();
-      }
-      this.emit(message.slice(0, 140));
+      this.emit(describeError(error));
       throw error;
     }
   }
@@ -134,15 +149,44 @@ export class Painter {
     });
   }
 
+  /**
+   * Refresca las fees con MUCHO margen en el techo.
+   *
+   * Esto arregla un rechazo intermitente. viem calcula
+   * `maxFeePerGas = baseFee * 1.2`, y nosotros cacheamos las fees 3 segundos
+   * para no gastar una llamada RPC por píxel. Pero el controlador de base fee
+   * de Monad sube hasta ~3,6% por bloque, y 3 segundos son ~10 bloques: el base
+   * fee puede subir hasta 1,42x entre refresco y envío. Con un techo de solo
+   * 1,2x, la transacción se rechaza por fee insuficiente de forma aleatoria.
+   *
+   * Subir el techo es GRATIS: en EIP-1559 pagas `base + priority`, y
+   * `maxFeePerGas` es solo un límite superior. Esto NO es como el gas limit,
+   * que en Monad se cobra entero.
+   *
+   * El único coste real es de Reserve Balance: consenso presupuesta las tx en
+   * vuelo como `gas_bid * gas_limit`, así que un techo más alto reduce cuántas
+   * puedes tener volando a la vez. Con 2x y 2 MON de saldo caben ~86 en vuelo,
+   * muy por encima de lo que un dedo humano puede generar.
+   */
   private async refreshFees(): Promise<void> {
     try {
       const fees = await this.client.estimateFeesPerGas();
-      this.maxFeePerGas = fees.maxFeePerGas;
-      this.maxPriorityFeePerGas = fees.maxPriorityFeePerGas;
+      const tip = fees.maxPriorityFeePerGas;
+      // Reconstruimos el base fee a partir de lo que devuelve viem y le damos
+      // el doble de techo, que cubre de sobra 3 segundos de subida máxima.
+      const base = fees.maxFeePerGas - tip;
+      this.maxPriorityFeePerGas = tip;
+      this.maxFeePerGas = base * 2n + tip;
     } catch {
       // Nos quedamos con las últimas conocidas; no vale la pena molestar al
       // usuario por un fallo puntual al refrescar fees.
     }
+  }
+
+  /** ¿Tenemos fees válidas? Firmar con maxFeePerGas = 0 produce un rechazo
+   *  ("Transaction fee too low") que parece un bug del usuario y no lo es. */
+  private hasFees(): boolean {
+    return this.maxFeePerGas > 0n;
   }
 
   private async refreshBalance(): Promise<void> {
@@ -171,3 +215,26 @@ export class Painter {
 
 export const formatMon = (wei: bigint): string =>
   Number(formatEther(wei)).toFixed(3);
+
+/**
+ * Saca el mensaje ÚTIL de un error de viem.
+ *
+ * `error.message` de viem trae su texto genérico más la URL y el cuerpo entero
+ * de la petición, que llena la pantalla y no dice nada. Peor: viem usa el mismo
+ * texto ("Missing or invalid parameters") para los códigos -32602 y -32000, y
+ * el -32000 es el genérico que los nodos devuelven para cualquier rechazo de
+ * transacción. El motivo real viene en `details`.
+ */
+function describeError(error: unknown): string {
+  const err = error as {
+    details?: string;
+    shortMessage?: string;
+    message?: string;
+    cause?: { message?: string; details?: string };
+  };
+  const detail =
+    err.details ?? err.cause?.details ?? err.cause?.message ?? undefined;
+  const summary = err.shortMessage ?? err.message ?? String(error);
+  const text = detail ? `${detail}` : summary;
+  return text.split("\n")[0]!.slice(0, 160);
+}

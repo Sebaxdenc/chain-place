@@ -88,6 +88,9 @@ contract BlitzCanvas {
         _tick();
         for (uint256 i; i < n; ++i) {
             uint32 idx = idxs[i];
+            // Validar cada indice es intencional: preferimos revertir todo el
+            // trazo a escribir medio trazo y dejar el lienzo inconsistente.
+            // forge-lint: disable-next-line(require-revert-in-loop)
             if (idx >= TOTAL) revert OutOfBounds(idx);
             _write(idx, colors[i]);
         }
@@ -97,15 +100,21 @@ contract BlitzCanvas {
         uint64 cd = cooldown;
         if (cd == 0) return; // con cooldown=0 no tocamos storage: mas barato
         uint64 last = lastPaintAt[msg.sender];
+        // uint64 aguanta timestamps hasta el año ~584.000 millones.
+        // forge-lint: disable-next-line(unsafe-typecast)
         uint64 nowTs = uint64(block.timestamp);
         if (last != 0 && nowTs < last + cd) revert OnCooldown(last + cd);
         lastPaintAt[msg.sender] = nowTs;
     }
 
     function _write(uint32 idx, uint8 color) private {
-        _pixels[idx] = uint256(color)
-            | (uint256(uint160(msg.sender)) << 8)
-            | (uint256(uint48(block.timestamp)) << 168);
+        // Los dos casts son parte del empaquetado y seguros por construccion:
+        // una address ES exactamente 160 bits (no se trunca nada), y uint48
+        // aguanta timestamps hasta el año ~8.9 millones. Va todo en una linea
+        // a proposito: separarlo en variables locales cuesta 36 gas extra en
+        // el camino caliente.
+        // forge-lint: disable-next-line(unsafe-typecast)
+        _pixels[idx] = uint256(color) | (uint256(uint160(msg.sender)) << 8) | (uint256(uint48(block.timestamp)) << 168);
         emit Painted(idx, color, msg.sender);
     }
 
@@ -113,10 +122,13 @@ contract BlitzCanvas {
     function pixel(uint32 idx)
         external
         view
-        returns (uint8 color, address painter, uint48 at)
+        returns (uint8 color, address painter, uint48 paintedAt)
     {
         if (idx >= TOTAL) revert OutOfBounds(idx);
         uint256 p = _pixels[idx];
+        // Desempaquetado: truncar es exactamente lo que queremos aqui, cada
+        // cast extrae su campo del slot.
+        // forge-lint: disable-next-line(unsafe-typecast)
         return (uint8(p), address(uint160(p >> 8)), uint48(p >> 168));
     }
 
@@ -134,6 +146,8 @@ contract BlitzCanvas {
         if (uint256(start) + uint256(count) > TOTAL) revert OutOfBounds(start);
         out = new bytes(count);
         for (uint256 i; i < count; ++i) {
+            // Nos quedamos solo con el byte de color del slot, a proposito.
+            // forge-lint: disable-next-line(unsafe-typecast)
             out[i] = bytes1(uint8(_pixels[start + i]));
         }
     }

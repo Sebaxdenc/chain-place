@@ -20,6 +20,13 @@ network = "monad"
 optimizer = true
 optimizer_runs = 1000
 
+# Embute el código fuente literal en la metadata, para que la verificación en
+# Sourcify (MonadVision / Monadscan) encuentre todas las fuentes a la primera.
+# OJO: esto afecta la metadata del bytecode, así que debe estar puesto ANTES de
+# desplegar. Si despliegas sin él y lo añades después, la verificación falla por
+# bytecode mismatch y toca re-desplegar.
+use_literal_content = true
+
 [rpc_endpoints]
 monad_testnet = "https://testnet-rpc.monad.xyz"
 monad_mainnet = "https://rpc.monad.xyz"

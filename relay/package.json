@@ -1,0 +1,23 @@
+{
+  "name": "chain-place-relay",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Indexer + fan-out WebSocket para el lienzo on-chain",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "probe": "tsx src/probe.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "viem": "^2.40.0",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/ws": "^8.5.13",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}

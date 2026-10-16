@@ -7,8 +7,17 @@
       name="viewport"
       content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
     />
-    <meta name="theme-color" content="#0f0f12" />
+    <meta name="theme-color" content="#0b0e16" />
     <title>chain-place</title>
+    <!-- Press Start 2P solo para el logotipo. `display=swap` hace que, si la
+         fuente no carga (WiFi de auditorio), caiga a monoespaciada en lugar de
+         dejar texto invisible. El resto de la interfaz no depende de ella. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap"
+    />
   </head>
   <body>
     <div id="root"></div>

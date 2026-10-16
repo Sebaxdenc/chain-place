@@ -1,12 +1,74 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   chain-place — sistema de diseño
+   ═══════════════════════════════════════════════════════════════════════════
+
+   Estilo: Pixel Art (retro, 8-bit, arcade), que encaja con un lienzo de
+   píxeles. Pero con dos desviaciones deliberadas:
+
+   1. CROMO NEUTRO. El sistema de diseño sugería rojo + azul + verde de acento.
+      Lo descarté: el lienzo YA contiene esos colores en su paleta, y si la
+      interfaz los usa, compite visualmente con la obra. En una app de dibujo,
+      el cromo tiene que desaparecer para que el contenido domine. Solo se usa
+      color con significado (verde = confirmado, ámbar = aviso, rojo = error).
+
+   2. TIPOGRAFÍA MIXTA. El sistema sugería Press Start 2P + VT323 para todo.
+      Press Start 2P a 12px hace ilegible una dirección hexadecimal. Se usa
+      solo para el logotipo y las cifras grandes; los datos van en monoespaciada
+      del sistema.
+
+   Contrastes verificados con la fórmula WCAG (todos sobre --surface):
+     texto blanco   17.38:1    muted #94A3B8   6.78:1
+     verde #4ADE80   9.98:1    ámbar #F59E0B   8.09:1
+     rojo  #F87171   6.28:1    azul  #60A5FA   6.84:1
+     borde de control #64748B  3.65:1  (mínimo 3:1 para contornos)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
 :root {
-  --bg: #0f0f12;
-  --panel: #17171c;
-  --line: #2a2a33;
-  --text: #e8e8ee;
-  --muted: #8a8a99;
-  --accent: #7c5cff;
-  --warn: #ffb020;
-  --error: #ff5c5c;
+  /* ── Superficies ─────────────────────────────────────────────────────── */
+  --bg: #0b0e16;
+  --surface: #141a28;
+  --surface-2: #1d2435;
+  --surface-3: #262f44;
+
+  /* ── Texto ───────────────────────────────────────────────────────────── */
+  --text: #ffffff;
+  --text-muted: #94a3b8;
+
+  /* ── Bordes ──────────────────────────────────────────────────────────── */
+  /* Divisor decorativo: no necesita 3:1, solo tiene que verse. */
+  --divider: rgba(255, 255, 255, 0.09);
+  /* Contorno de control: SÍ necesita 3:1. #64748B da 3.65:1. */
+  --border-control: #64748b;
+
+  /* ── Color semántico (nunca decorativo) ──────────────────────────────── */
+  --ok: #4ade80;
+  --warn: #f59e0b;
+  --error: #f87171;
+  --focus: #60a5fa;
+
+  /* ── Espaciado: ritmo de 4px, denso (es una herramienta) ─────────────── */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+
+  /* ── Objetivos táctiles ──────────────────────────────────────────────── */
+  /* WCAG en web pide 24px mínimo; 44px es lo cómodo para un dedo. */
+  --touch-min: 44px;
+
+  --font-pixel: "Press Start 2P", ui-monospace, monospace;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, monospace;
+  --font-ui: system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  --t-fast: 120ms;
+  --t-base: 200ms;
+
   color-scheme: dark;
 }
 
@@ -24,11 +86,39 @@ body,
 body {
   background: var(--bg);
   color: var(--text);
-  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
-  /* Evita el "pull to refresh" y el rebote al pintar cerca de los bordes */
+  font-family: var(--font-ui);
+  font-size: 14px;
+  line-height: 1.5;
+  /* Evita el "pull to refresh" y el rebote al dibujar cerca de los bordes */
   overscroll-behavior: none;
   -webkit-user-select: none;
   user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Foco visible y consistente. Nunca se quita el outline sin reemplazarlo:
+   sin esto, navegar con teclado es imposible. */
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+button {
+  font-family: inherit;
+  font-size: inherit;
+  cursor: pointer;
+}
+
+/* Respeta a quien pidió menos movimiento. Obligatorio, no opcional. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 .app {
@@ -38,76 +128,122 @@ body {
 }
 
 .mono {
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
 }
 .muted {
-  color: var(--muted);
+  color: var(--text-muted);
 }
-.small {
-  font-size: 11px;
-}
-.warn {
-  color: var(--warn);
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
-/* ── Barra de estado ─────────────────────────────────────────────────────── */
-.status {
+/* ═══════════════════════════════ Barra superior ═════════════════════════ */
+.topbar {
   flex: 0 0 auto;
-  padding: 10px 12px;
-  background: var(--panel);
-  border-bottom: 1px solid var(--line);
-  font-size: 13px;
-}
-
-.status-row {
   display: flex;
   align-items: center;
-  gap: 10px;
-  min-height: 20px;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  padding-top: calc(var(--space-2) + env(safe-area-inset-top));
+  background: var(--surface);
+  border-bottom: 1px solid var(--divider);
 }
 
-.dot {
+.wordmark {
+  font-family: var(--font-pixel);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.topbar-spacer {
+  flex: 1 1 auto;
+}
+
+/* Indicador de conexión: color + FORMA, nunca solo color (hay gente que no
+   distingue verde de rojo). */
+.conn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.conn-dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
   flex: 0 0 auto;
 }
-.dot-conectado {
-  background: #3ddc84;
+.conn-conectado .conn-dot {
+  background: var(--ok);
 }
-.dot-conectando {
+.conn-conectando .conn-dot {
   background: var(--warn);
+  animation: pulse 1s ease-in-out infinite;
 }
-.dot-desconectado {
+.conn-desconectado .conn-dot {
   background: var(--error);
 }
 
-.pending {
-  color: var(--accent);
+@keyframes pulse {
+  50% {
+    opacity: 0.35;
+  }
 }
-.latency {
-  color: #3ddc84;
+
+/* ═══════════════════════════════ Fila de datos ══════════════════════════ */
+.metrics {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface);
+  border-bottom: 1px solid var(--divider);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.metrics::-webkit-scrollbar {
+  display: none;
+}
+
+.metric {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+  flex: 0 0 auto;
+}
+.metric-value {
+  font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
+  font-size: 13px;
+  color: var(--text);
+}
+.metric-label {
+  font-size: 10px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.metric-value.is-ok {
+  color: var(--ok);
+}
+.metric-value.is-warn {
+  color: var(--warn);
 }
 
-.banner {
-  margin-top: 8px;
-  padding: 8px 10px;
-  border-radius: 6px;
-  background: #241f33;
-  border: 1px solid var(--accent);
-  font-size: 12px;
-  line-height: 1.5;
-  word-break: break-all;
-  -webkit-user-select: text;
-  user-select: text;
-}
-.banner.error {
-  background: #2a1b1b;
-  border-color: var(--error);
-}
-
-/* ── Lienzo ──────────────────────────────────────────────────────────────── */
+/* ═══════════════════════════════ Lienzo ═════════════════════════════════ */
 .canvas-area {
   flex: 1 1 auto;
   position: relative;
@@ -120,10 +256,9 @@ body {
   overflow: auto;
   display: grid;
   place-items: center;
-  /* El pan lo hace el scroll nativo (con inercia incluida); desactivamos el
-     doble-tap-zoom del navegador para que no pelee con el toque de elegir. */
+  /* El pan lo hace el scroll nativo, que trae inercia de serie. */
   touch-action: pan-x pan-y;
-  background: #000;
+  background: #06080d;
 }
 
 .canvas-stage {
@@ -136,7 +271,7 @@ body {
   image-rendering: pixelated;
   display: block;
   touch-action: none;
-  box-shadow: 0 0 0 1px var(--line);
+  box-shadow: 0 0 0 1px var(--divider);
 }
 
 /* Cursor del píxel elegido. Doble borde (negro fuera, blanco dentro) para que
@@ -151,121 +286,361 @@ body {
 }
 
 @keyframes cursor-pulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
   50% {
-    opacity: 0.45;
+    opacity: 0.5;
   }
-}
-
-/* ── Barra de confirmación ───────────────────────────────────────────────── */
-.confirm-bar {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 12px;
-  background: var(--panel);
-  border-top: 1px solid var(--line);
-}
-
-.confirm-btn {
-  flex: 1 1 auto;
-  border: none;
-  border-radius: 8px;
-  padding: 13px;
-  font-size: 15px;
-  font-weight: 600;
-  /* Mezcla de sombras para que el texto se lea sobre cualquier color */
-  color: #000;
-  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.45);
-  cursor: pointer;
-}
-.confirm-btn:disabled {
-  opacity: 0.45;
-}
-
-.cancel-btn {
-  background: transparent;
-  color: var(--muted);
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 13px 15px;
-  font-size: 15px;
-  cursor: pointer;
 }
 
 .zoom-controls {
   position: absolute;
-  right: 10px;
-  bottom: 10px;
+  right: var(--space-3);
+  bottom: var(--space-3);
   display: flex;
-  gap: 6px;
+  gap: var(--space-2);
 }
 
-.zoom-btn {
-  background: rgba(23, 23, 28, 0.92);
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  min-width: var(--touch-min);
+  min-height: var(--touch-min);
+  padding: 0 var(--space-3);
+  background: rgba(20, 26, 40, 0.94);
   color: var(--text);
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  padding: 7px 11px;
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-md);
   font-size: 12px;
-  cursor: pointer;
+  backdrop-filter: blur(8px);
+  transition:
+    background var(--t-fast),
+    border-color var(--t-fast);
 }
-.zoom-btn.active {
-  border-color: var(--accent);
-  color: var(--accent);
+.icon-btn:hover {
+  background: var(--surface-3);
+}
+/* El estado activo cambia color y borde, nunca el tamaño: transformar el
+   layout en un botón provoca saltos visuales. */
+.icon-btn[aria-pressed="true"] {
+  border-color: var(--focus);
+  color: var(--focus);
 }
 
-/* ── Paleta ──────────────────────────────────────────────────────────────── */
-/* 16 colores en UNA fila: ocupan la mitad de alto que antes y dejan mucho más
-   sitio al lienzo, que es lo que importa. */
+/* ═══════════════════════════ Barra de confirmación ══════════════════════ */
+.confirm-bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface-2);
+  border-top: 1px solid var(--divider);
+}
+
+.coord {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  color: var(--text-muted);
+  flex: 0 0 auto;
+}
+
+.confirm-btn {
+  flex: 1 1 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: var(--touch-min);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-md);
+  background: var(--surface-3);
+  color: var(--text);
+  font-weight: 600;
+  transition: background var(--t-fast);
+}
+.confirm-btn:hover:not(:disabled) {
+  background: #2f3a52;
+}
+.confirm-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Muestra del color elegido dentro del botón: así el color se comunica por
+   posición y etiqueta, no solo por el relleno del botón. */
+.confirm-chip {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  border: 1px solid var(--border-control);
+  flex: 0 0 auto;
+}
+
+.ghost-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--touch-min);
+  min-height: var(--touch-min);
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-md);
+  transition:
+    color var(--t-fast),
+    border-color var(--t-fast);
+}
+.ghost-btn:hover {
+  color: var(--text);
+  border-color: var(--border-control);
+}
+
+/* ═══════════════════════════════ Paleta ═════════════════════════════════ */
+/*
+   Una SOLA fila con scroll horizontal, no una rejilla.
+
+   Antes había 16 swatches en una fila de 390px, lo que daba ~20px cada uno:
+   por debajo del mínimo de 24px de WCAG para objetivos táctiles en web. Y en
+   dos filas de 44px se comían 95px de alto que le quitaba al lienzo.
+
+   Con scroll horizontal: 44px de objetivo táctil y una sola fila de alto.
+*/
 .palette {
   flex: 0 0 auto;
-  display: grid;
-  grid-template-columns: repeat(16, 1fr);
-  gap: 3px;
-  padding: 8px 10px;
-  background: var(--panel);
-  border-top: 1px solid var(--line);
-  /* Respeta la zona del gesto de inicio en iOS */
-  padding-bottom: calc(8px + env(safe-area-inset-bottom));
+  display: flex;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  padding-bottom: calc(var(--space-2) + env(safe-area-inset-bottom));
+  background: var(--surface);
+  border-top: 1px solid var(--divider);
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
+}
+.palette::-webkit-scrollbar {
+  display: none;
 }
 
 .swatch {
-  aspect-ratio: 1;
-  border: 2px solid transparent;
-  border-radius: 4px;
-  cursor: pointer;
+  width: var(--touch-min);
+  height: var(--touch-min);
+  flex: 0 0 auto;
   padding: 0;
-  outline-offset: 2px;
+  border: 2px solid transparent;
+  border-radius: var(--radius-sm);
+  scroll-snap-align: center;
+  position: relative;
+  transition: border-color var(--t-fast);
 }
-.swatch.selected {
+/* El blanco necesita contorno propio o es invisible sobre la superficie. */
+.swatch::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 4px;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+}
+.swatch[aria-pressed="true"] {
   border-color: var(--text);
-  transform: scale(1.22);
-  z-index: 1;
 }
-/* El blanco necesita borde propio o es invisible sobre el panel */
-.swatch:first-child {
-  box-shadow: inset 0 0 0 1px var(--line);
+/* Marca de selección: el estado NO se comunica solo con color. */
+.swatch[aria-pressed="true"]::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -1px;
+  width: 14px;
+  height: 3px;
+  background: var(--text);
+  border-radius: 2px;
+  transform: translateX(-50%);
 }
 
-/* ── Pantalla de configuración ───────────────────────────────────────────── */
+/* ═══════════════════════════════ Avisos ════════════════════════════════ */
+.notice {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin: var(--space-2) var(--space-3);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-control);
+  background: var(--surface-2);
+  font-size: 12px;
+  line-height: 1.55;
+  word-break: break-word;
+  -webkit-user-select: text;
+  user-select: text;
+}
+.notice-warn {
+  border-color: var(--warn);
+}
+.notice-error {
+  border-color: var(--error);
+}
+.notice a {
+  color: var(--focus);
+}
+.notice code {
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.notice-action {
+  margin-top: var(--space-2);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  padding: 0 var(--space-4);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-control);
+  background: var(--surface-3);
+  color: var(--text);
+  font-weight: 600;
+  font-size: 12px;
+}
+
+/* ═══════════════════════════ Hoja de modos ══════════════════════════════ */
+.sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  /* Scrim medido contra el fondo real para que el contenido de delante se lea */
+  background: rgba(5, 7, 12, 0.78);
+  display: flex;
+  align-items: flex-end;
+  z-index: 10;
+}
+
+.sheet {
+  width: 100%;
+  max-height: 88vh;
+  overflow-y: auto;
+  background: var(--surface);
+  border-top: 1px solid var(--divider);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  padding: var(--space-4);
+  padding-bottom: calc(var(--space-4) + env(safe-area-inset-bottom));
+}
+
+.sheet-title {
+  font-family: var(--font-pixel);
+  font-size: 12px;
+  margin: 0 0 var(--space-2);
+}
+.sheet-sub {
+  color: var(--text-muted);
+  font-size: 12px;
+  margin: 0 0 var(--space-4);
+}
+
+.mode-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.mode-card {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: var(--touch-min);
+  padding: var(--space-3);
+  text-align: left;
+  background: var(--surface-2);
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-md);
+  color: var(--text);
+  transition:
+    border-color var(--t-fast),
+    background var(--t-fast);
+}
+.mode-card:hover {
+  background: var(--surface-3);
+}
+.mode-card[aria-pressed="true"] {
+  border-color: var(--focus);
+}
+.mode-card:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.mode-icon {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+.mode-card[aria-pressed="true"] .mode-icon {
+  color: var(--focus);
+}
+
+.mode-body {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.mode-name {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-weight: 600;
+  font-size: 13px;
+}
+.mode-desc {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+  margin-top: 2px;
+}
+
+.badge {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--border-control);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.badge-ok {
+  border-color: var(--ok);
+  color: var(--ok);
+}
+.badge-warn {
+  border-color: var(--warn);
+  color: var(--warn);
+}
+
+.sheet-close {
+  width: 100%;
+  min-height: var(--touch-min);
+  margin-top: var(--space-4);
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-md);
+}
+
+/* ═══════════════════════ Pantalla de configuración ══════════════════════ */
 .setup {
-  padding: 24px;
-  max-width: 520px;
+  padding: var(--space-6) var(--space-4);
+  max-width: 540px;
   margin: 0 auto;
-  line-height: 1.6;
+  line-height: 1.65;
 }
 .setup h1 {
-  font-size: 20px;
+  font-family: var(--font-pixel);
+  font-size: 14px;
+  line-height: 1.6;
 }
 .setup code {
-  background: var(--panel);
+  background: var(--surface-2);
   padding: 2px 6px;
   border-radius: 4px;
-  font-family: ui-monospace, monospace;
-  font-size: 13px;
+  font-family: var(--font-mono);
+  font-size: 12px;
 }

@@ -1,20 +1,23 @@
 import { CONFIG } from "../config";
-import type { PainterState } from "../lib/painter";
 import { formatMon } from "../lib/painter";
+import { MODE_LABEL, type SenderState, type WalletMode } from "../lib/sender";
 import type { RelayStats, RelayStatus } from "../lib/relay";
+import { IconBolt, IconSliders } from "./Icon";
 
 interface Props {
-  painter: PainterState | null;
+  sender: SenderState | null;
   stats: RelayStats | null;
   status: RelayStatus;
   pending: number;
   lastLatencyMs: number | null;
-  origin: string;
+  mode: WalletMode | null;
+  onOpenModes: () => void;
 }
 
 const short = (address: string) => `${address.slice(0, 6)}…${address.slice(-4)}`;
 
-const relayHost = (() => {
+const sourceLabel = (() => {
+  if (CONFIG.mode === "directo") return "directo";
   try {
     return new URL(CONFIG.relayUrl).host;
   } catch {
@@ -23,63 +26,103 @@ const relayHost = (() => {
 })();
 
 export function StatusBar({
-  painter,
+  sender,
   stats,
   status,
   pending,
   lastLatencyMs,
-  origin,
+  mode,
+  onOpenModes,
 }: Props) {
-  const lowBalance = painter !== null && painter.paintsLeft < 10;
+  const lowFunds = sender !== null && sender.ready && sender.paintsLeft < 10;
 
   return (
-    <header className="status">
-      <div className="status-row">
-        <span className="mono">
-          {painter ? short(painter.address) : "cargando…"}
-        </span>
-        <span className={`dot dot-${status}`} title={`relay: ${status}`} />
-        <span className="muted">{status}</span>
-      </div>
+    <>
+      <header className="topbar">
+        <span className="wordmark">CHAIN&middot;PLACE</span>
+        <span className="topbar-spacer" />
 
-      <div className="status-row">
-        {painter && (
-          <span className={lowBalance ? "warn" : "muted"}>
-            {formatMon(painter.balanceWei)} MON · {painter.paintsLeft} píxeles
+        {/* El estado se comunica con color Y con texto, nunca solo con color */}
+        <span className={`conn conn-${status}`}>
+          <span className="conn-dot" aria-hidden="true" />
+          {status}
+        </span>
+
+        <button
+          className="ghost-btn"
+          onClick={onOpenModes}
+          aria-label={`Cambiar modo. Actual: ${mode ? MODE_LABEL[mode] : "sin elegir"}`}
+        >
+          <IconSliders size={18} />
+        </button>
+      </header>
+
+      <div className="metrics">
+        <div className="metric">
+          <span className="metric-value mono">
+            {sender?.address ? short(sender.address) : "—"}
           </span>
+          <span className="metric-label">
+            {mode ? MODE_LABEL[mode] : "modo"}
+          </span>
+        </div>
+
+        {sender && (
+          <div className="metric">
+            <span className={`metric-value${lowFunds ? " is-warn" : ""}`}>
+              {formatMon(sender.balanceWei)}
+            </span>
+            <span className="metric-label">MON</span>
+          </div>
         )}
-        {pending > 0 && <span className="pending">{pending} en vuelo</span>}
+
+        {sender && sender.ready && (
+          <div className="metric">
+            <span className={`metric-value${lowFunds ? " is-warn" : ""}`}>
+              {sender.paintsLeft}
+            </span>
+            <span className="metric-label">píxeles</span>
+          </div>
+        )}
+
+        {pending > 0 && (
+          <div className="metric">
+            <span className="metric-value">{pending}</span>
+            <span className="metric-label">en vuelo</span>
+          </div>
+        )}
+
         {lastLatencyMs !== null && (
-          <span className="latency">⚡ {lastLatencyMs} ms</span>
+          <div className="metric">
+            <span className="metric-value is-ok">
+              <IconBolt size={12} /> {lastLatencyMs}
+            </span>
+            <span className="metric-label">ms</span>
+          </div>
         )}
-      </div>
 
-      {stats && (
-        <div className="status-row muted small">
-          <span>{stats.tps} TPS</span>
-          <span>pico {stats.peakTps}</span>
-          <span>{stats.painted} pintados</span>
-          <span>{stats.clients} conectados</span>
+        {stats && (
+          <>
+            <div className="metric">
+              <span className="metric-value">{stats.tps}</span>
+              <span className="metric-label">tx/s</span>
+            </div>
+            <div className="metric">
+              <span className="metric-value">{stats.painted}</span>
+              <span className="metric-label">pintados</span>
+            </div>
+            <div className="metric">
+              <span className="metric-value mono">{stats.block}</span>
+              <span className="metric-label">bloque</span>
+            </div>
+          </>
+        )}
+
+        <div className="metric">
+          <span className="metric-value mono">{sourceLabel}</span>
+          <span className="metric-label">fuente</span>
         </div>
-      )}
-
-      {/* De dónde vienen los datos. Con `?relay=` se cambia sin recompilar, y
-          sin relay se habla directo con Monad, así que conviene verlo. */}
-      <div className="status-row muted small">
-        <span className="mono">
-          {CONFIG.mode === "relay" ? relayHost : "directo · sin relay"}
-        </span>
       </div>
-
-      {origin === "nueva" && painter?.paintsLeft === 0 && (
-        <div className="banner">
-          Esta wallet es nueva y no tiene fondos. Mándale MON a{" "}
-          <code className="mono">{painter.address}</code> o entra con un QR
-          pre-fondeado.
-        </div>
-      )}
-
-      {painter?.lastError && <div className="banner error">{painter.lastError}</div>}
-    </header>
+    </>
   );
 }

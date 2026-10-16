@@ -644,3 +644,121 @@ button {
   font-family: var(--font-mono);
   font-size: 12px;
 }
+
+/* ═══════════════════════ Tarjeta de clave de sesión ════════════════════════
+   El paso de fondear la sesión es "manda MON a esta dirección", que es la
+   forma exacta que tiene un drenador de wallets. Lo que distingue a una app
+   legítima no es el flujo, sino que el usuario vea a dónde va su dinero y
+   pueda recuperarlo. De ahí que esta tarjeta sea generosa en espacio: no es
+   sitio para ahorrar píxeles.
+   ═════════════════════════════════════════════════════════════════════════ */
+.session-card {
+  flex: 0 0 auto;
+  margin: var(--space-2) var(--space-3);
+  padding: var(--space-4);
+  background: var(--surface-2);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-md);
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.session-head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+.session-title {
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.session-note {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.6;
+  margin: var(--space-1) 0 0;
+}
+
+.session-field {
+  margin-top: var(--space-4);
+}
+
+.session-label {
+  display: block;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin-bottom: var(--space-1);
+}
+
+/* La dirección va completa y seleccionable, nunca truncada: el usuario tiene
+   derecho a comprobar a dónde manda su dinero antes de firmar. */
+.session-address {
+  display: block;
+  font-size: 11px;
+  line-height: 1.5;
+  word-break: break-all;
+  padding: var(--space-2);
+  background: var(--bg);
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+}
+
+.session-balance {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 15px;
+}
+
+.amount-row {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.amount-btn {
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-height: var(--touch-min);
+  padding: var(--space-2);
+  background: var(--surface-3);
+  color: var(--text);
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-sm);
+  transition:
+    border-color var(--t-fast),
+    background var(--t-fast);
+}
+.amount-btn:hover {
+  background: #2f3a52;
+}
+.amount-btn[aria-pressed="true"] {
+  border-color: var(--focus);
+}
+
+.amount-value {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+  font-weight: 600;
+}
+.amount-sub {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+.amount-btn[aria-pressed="true"] .amount-sub {
+  color: var(--focus);
+}
+
+.session-wide {
+  display: flex;
+  width: 100%;
+  margin-top: var(--space-4);
+  min-height: var(--touch-min);
+}

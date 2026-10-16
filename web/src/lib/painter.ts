@@ -96,6 +96,57 @@ export class LocalPainter implements PaintSender {
   }
 
   /**
+   * Devuelve el saldo restante a la wallet del usuario.
+   *
+   * Hay una trampa de Monad aquí. El mecanismo de Reserve Balance normalmente
+   * impide que una cuenta baje de 10 MON, lo que haría imposible vaciar una
+   * burner con 2 MON. La excepción es la "transacción que vacía la cuenta",
+   * que SÍ puede bajar del reserve, pero solo si se cumplen dos condiciones:
+   *
+   *   · la cuenta no está delegada por EIP-7702 (la nuestra no lo está), y
+   *   · no hay OTRA transacción del mismo remitente en los k=3 bloques
+   *     previos (~1,2 segundos)
+   *
+   * Por eso esto puede fallar si se pulsa justo después de pintar: habría
+   * pintadas en vuelo. El error se muestra y basta reintentar un segundo
+   * después.
+   *
+   * Mandamos `balance - gas_limit * gas_bid`. Como el techo de fee lleva 2x de
+   * margen sobre el base fee, en la práctica queda un poco de polvo sin
+   * recuperar, lo cual es preferible a que la transacción no entre.
+   */
+  async sweepTo(to: `0x${string}`): Promise<`0x${string}`> {
+    await this.refreshBalance();
+
+    const gasReserved = 21_000n * this.maxFeePerGas;
+    if (this.balanceWei <= gasReserved) {
+      throw new Error("El saldo no alcanza ni para el gas del envío");
+    }
+
+    const value = this.balanceWei - gasReserved;
+    const nonce = await this.client.getTransactionCount({
+      address: this.account.address,
+      blockTag: "pending",
+    });
+
+    const serializedTransaction = await this.account.signTransaction({
+      to,
+      value,
+      chainId: CONFIG.chain.id,
+      nonce,
+      // 21.000 es el coste exacto de una transferencia nativa.
+      gas: 21_000n,
+      maxFeePerGas: this.maxFeePerGas,
+      maxPriorityFeePerGas: this.maxPriorityFeePerGas,
+      type: "eip1559",
+    });
+
+    const hash = await this.client.sendRawTransaction({ serializedTransaction });
+    this.nonce = nonce + 1;
+    return hash;
+  }
+
+  /**
    * Pinta un píxel. Devuelve el hash en cuanto el RPC lo acepta.
    *
    * No esperamos confirmación: la UI ya pintó el píxel de forma optimista y el

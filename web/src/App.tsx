@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { parseEther } from "viem";
 import { CONFIG, configErrors, mixedContentWarning } from "./config";
 import { PALETTE } from "./palette";
 import { CanvasRenderer } from "./lib/renderer";
@@ -10,11 +11,25 @@ import {
   type RelayStatus,
 } from "./lib/relay";
 import { DirectClient } from "./lib/direct";
-import { Painter, type PainterState } from "./lib/painter";
-import { resolveBurner, type WalletOrigin } from "./lib/wallet";
+import { LocalPainter, describeError } from "./lib/painter";
+import { WalletPainter } from "./lib/walletPainter";
+import {
+  connectInjected,
+  hasInjected,
+  sendValue,
+  watchInjected,
+} from "./lib/injected";
+import type { PaintSender, SenderState, WalletMode } from "./lib/sender";
+import { resolveBurner, loadMode, saveMode } from "./lib/wallet";
 import { CanvasView } from "./components/CanvasView";
 import { Palette } from "./components/Palette";
 import { StatusBar } from "./components/StatusBar";
+import { ModePicker } from "./components/ModePicker";
+import { IconCheck, IconX } from "./components/Icon";
+
+/** Cuánto MON manda la wallet del usuario a la clave de sesión.
+ *  A ~0.0095 MON por píxel, 2 MON dan para unos 210. */
+const SESSION_FUNDING = parseEther("2");
 
 export default function App() {
   if (configErrors.length > 0) return <SetupScreen missing={configErrors} />;
@@ -25,7 +40,9 @@ function SetupScreen({ missing }: { missing: string[] }) {
   return (
     <div className="setup">
       <h1>Falta configuración</h1>
-      <p>Copia <code>web/.env.example</code> a <code>web/.env</code> y rellena:</p>
+      <p>
+        Copia <code>web/.env.example</code> a <code>web/.env</code> y rellena:
+      </p>
       <ul>
         {missing.map((name) => (
           <li key={name}>
@@ -33,7 +50,7 @@ function SetupScreen({ missing }: { missing: string[] }) {
           </li>
         ))}
       </ul>
-      <p className="muted small">
+      <p className="muted">
         Vite solo lee el <code>.env</code> al arrancar: reinicia{" "}
         <code>npm run dev</code> después de crearlo.
       </p>
@@ -45,34 +62,77 @@ function Canvas() {
   const [canvasEl, setCanvasEl] = useState<HTMLCanvasElement | null>(null);
   const [color, setColor] = useState(5);
   const [selected, setSelected] = useState<number | null>(null);
-  const [painterState, setPainterState] = useState<PainterState | null>(null);
+  const [senderState, setSenderState] = useState<SenderState | null>(null);
   const [stats, setStats] = useState<RelayStats | null>(null);
   const [status, setStatus] = useState<RelayStatus>("conectando");
   const [pending, setPending] = useState(0);
   const [lastLatencyMs, setLastLatencyMs] = useState<number | null>(null);
-  const [origin, setOrigin] = useState<WalletOrigin>("nueva");
+
+  const [mode, setMode] = useState<WalletMode | null>(() => loadMode());
+  const [showModes, setShowModes] = useState(() => loadMode() === null);
+  const [walletAddress, setWalletAddress] = useState<`0x${string}` | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
   const rendererRef = useRef<CanvasRenderer | null>(null);
-  const painterRef = useRef<Painter | null>(null);
+  const senderRef = useRef<PaintSender | null>(null);
   /** idx → instante del toque, para medir la latencia real de cada píxel. */
   const sentAt = useRef(new Map<number, number>());
 
-  // ── Wallet + painter ──────────────────────────────────────────────────────
-  useEffect(() => {
-    const burner = resolveBurner();
-    setOrigin(burner.origin);
+  // La clave del navegador se resuelve una sola vez y se reutiliza: la usan
+  // tanto el modo "app" como el modo "sesión".
+  const burnerRef = useRef(resolveBurner());
+  const burner = burnerRef.current;
 
-    const painter = new Painter(burner.account, setPainterState);
-    painterRef.current = painter;
-    void painter.init();
+  const walletAvailable = hasInjected();
+
+  // ── Firmante, según el modo ───────────────────────────────────────────────
+  useEffect(() => {
+    if (mode === null) return;
+
+    // El modo "mi wallet" no puede arrancar sin cuenta conectada.
+    if (mode === "wallet" && !walletAddress) {
+      senderRef.current = null;
+      setSenderState({
+        address: null,
+        walletAddress: null,
+        balanceWei: 0n,
+        paintsLeft: 0,
+        ready: false,
+        blocked: walletAvailable ? "conectar" : "sin-wallet",
+      });
+      return;
+    }
+
+    const sender: PaintSender =
+      mode === "wallet" && walletAddress
+        ? new WalletPainter(walletAddress, setSenderState)
+        : new LocalPainter(
+            burner.account,
+            setSenderState,
+            mode === "session" ? walletAddress : null,
+          );
+
+    senderRef.current = sender;
+    void sender.init();
 
     return () => {
-      painter.dispose();
-      painterRef.current = null;
+      sender.dispose();
+      senderRef.current = null;
     };
-  }, []);
+  }, [mode, walletAddress, walletAvailable, burner.account]);
 
-  // ── Renderizador + relay ──────────────────────────────────────────────────
+  // Si el usuario cambia de cuenta o de red en su wallet, hay que enterarse:
+  // seguir firmando con una cuenta que ya no está activa falla en silencio.
+  useEffect(() => {
+    if (mode !== "wallet" && mode !== "session") return;
+    return watchInjected(() => {
+      setWalletAddress(null);
+      setActionError("Cambiaste de cuenta o de red en la wallet. Vuelve a conectar.");
+    });
+  }, [mode]);
+
+  // ── Renderizador + fuente de datos ────────────────────────────────────────
   // Se crean juntos y solo cuando el canvas existe, para que no llegue un
   // snapshot antes de tener dónde dibujarlo.
   useEffect(() => {
@@ -105,9 +165,6 @@ function Canvas() {
       onStatus: setStatus,
     };
 
-    // Con relay configurado lo usamos; sin él, hablamos directo con Monad.
-    // Las dos fuentes cumplen la misma interfaz, así que a partir de aquí da
-    // igual cuál sea.
     const source: CanvasSource = CONFIG.relayUrl
       ? new RelayClient(CONFIG.relayUrl, handlers)
       : new DirectClient(handlers);
@@ -120,35 +177,77 @@ function Canvas() {
     };
   }, [canvasEl]);
 
-  /** Confirma el píxel elegido. Se llama desde el botón, no desde el toque:
-   *  elegir y pintar van separados para no pintar donde no querías. */
+  // ── Acciones ──────────────────────────────────────────────────────────────
+  const chooseMode = useCallback((next: WalletMode) => {
+    setMode(next);
+    saveMode(next);
+    setActionError(null);
+    setShowModes(false);
+  }, []);
+
+  const connect = useCallback(async () => {
+    setBusy(true);
+    setActionError(null);
+    try {
+      setWalletAddress(await connectInjected());
+    } catch (error) {
+      setActionError(describeError(error));
+    } finally {
+      setBusy(false);
+    }
+  }, []);
+
+  /** Conecta (si hace falta) y manda MON de la wallet del usuario a la clave
+   *  de sesión. Una sola transacción, y después se pinta sin confirmaciones. */
+  const fundSession = useCallback(async () => {
+    setBusy(true);
+    setActionError(null);
+    try {
+      const from = walletAddress ?? (await connectInjected());
+      setWalletAddress(from);
+      await sendValue(from, burner.account.address, SESSION_FUNDING);
+
+      // La transferencia confirma en ~600ms, pero damos varios intentos por si
+      // la red va lenta. Sin esto habría que esperar al intervalo de 15s y
+      // parecería que el fondeo no funcionó.
+      const sender = senderRef.current;
+      if (sender instanceof LocalPainter) {
+        for (let i = 0; i < 6; i++) {
+          await new Promise((r) => setTimeout(r, 700));
+          await sender.refresh();
+        }
+      }
+    } catch (error) {
+      setActionError(describeError(error));
+    } finally {
+      setBusy(false);
+    }
+  }, [walletAddress, burner.account.address]);
+
   const confirmPaint = useCallback(() => {
     const renderer = rendererRef.current;
-    const painter = painterRef.current;
-    if (selected === null || !renderer || !painter || !painterState?.ready) return;
+    const sender = senderRef.current;
+    if (selected === null || !renderer || !sender || !senderState?.ready) return;
 
     const idx = selected;
-
     // Pintar el mismo color que ya tiene no aporta nada y gastaría gas.
     if (renderer.colorAt(idx) === color) return;
 
-    // 1. Pintado optimista: el píxel aparece YA, pulsando. El usuario no
-    //    espera los ~600 ms de confirmación.
+    // Pintado optimista: el píxel aparece YA, pulsando. El usuario no espera
+    // los ~600 ms de confirmación.
     renderer.addPending(idx, color);
     sentAt.current.set(idx, performance.now());
     setPending(renderer.pendingCount());
 
-    // Soltamos la selección pero NO el zoom, para poder seguir dibujando
-    // píxeles vecinos a golpe de toque.
+    // Soltamos la selección pero NO el zoom, para seguir dibujando vecinos.
     setSelected(null);
 
-    // 2. La transacción sale en paralelo. Si falla, se revierte el píxel.
-    painter.paint(idx, color).catch(() => {
+    sender.paint(idx, color).catch(() => {
       renderer.dropPending(idx);
       sentAt.current.delete(idx);
       setPending(renderer.pendingCount());
     });
-  }, [selected, color, painterState?.ready]);
+  }, [selected, color, senderState?.ready]);
 
   const selectedXY =
     selected === null
@@ -158,17 +257,29 @@ function Canvas() {
   return (
     <div className="app">
       <StatusBar
-        painter={painterState}
+        sender={senderState}
         stats={stats}
         status={status}
         pending={pending}
         lastLatencyMs={lastLatencyMs}
-        origin={origin}
+        mode={mode}
+        onOpenModes={() => setShowModes(true)}
       />
 
       {mixedContentWarning && (
-        <div className="banner error">{mixedContentWarning}</div>
+        <div className="notice notice-error">{mixedContentWarning}</div>
       )}
+
+      {actionError && <div className="notice notice-warn">{actionError}</div>}
+
+      <Blocker
+        mode={mode}
+        sender={senderState}
+        busy={busy}
+        burnerAddress={burner.account.address}
+        onConnect={connect}
+        onFund={fundSession}
+      />
 
       <CanvasView
         onCanvasReady={setCanvasEl}
@@ -178,24 +289,121 @@ function Canvas() {
 
       {selectedXY && (
         <div className="confirm-bar">
-          <span className="mono muted">
-            ({selectedXY[0]}, {selectedXY[1]})
+          <span className="coord">
+            {selectedXY[0]}, {selectedXY[1]}
           </span>
           <button
             className="confirm-btn"
-            style={{ background: PALETTE[color]?.hex }}
             onClick={confirmPaint}
-            disabled={!painterState?.ready}
+            disabled={!senderState?.ready}
           >
+            <span
+              className="confirm-chip"
+              style={{ background: PALETTE[color]?.hex }}
+              aria-hidden="true"
+            />
+            <IconCheck size={18} />
             Pintar
           </button>
-          <button className="cancel-btn" onClick={() => setSelected(null)}>
-            ✕
+          <button
+            className="ghost-btn"
+            onClick={() => setSelected(null)}
+            aria-label="Cancelar selección"
+          >
+            <IconX size={18} />
           </button>
         </div>
       )}
 
       <Palette selected={color} onSelect={setColor} />
+
+      {showModes && (
+        <ModePicker
+          current={mode}
+          walletAvailable={walletAvailable}
+          onSelect={chooseMode}
+          onClose={() => setShowModes(false)}
+          dismissible={mode !== null}
+        />
+      )}
+    </div>
+  );
+}
+
+/** Lo que el usuario tiene que hacer antes de poder pintar, si algo falta. */
+function Blocker({
+  mode,
+  sender,
+  busy,
+  burnerAddress,
+  onConnect,
+  onFund,
+}: {
+  mode: WalletMode | null;
+  sender: SenderState | null;
+  busy: boolean;
+  burnerAddress: `0x${string}`;
+  onConnect: () => void;
+  onFund: () => void;
+}) {
+  if (!sender || sender.blocked === null) return null;
+
+  if (sender.blocked === "sin-wallet") {
+    return (
+      <div className="notice notice-warn">
+        No se detectó ninguna wallet en este navegador. Ábrelo desde el
+        navegador de tu wallet, o cambia a la wallet de la app.
+      </div>
+    );
+  }
+
+  if (sender.blocked === "conectar") {
+    return (
+      <div className="notice">
+        Conecta tu wallet para pintar desde tu propia dirección.
+        <br />
+        <button className="notice-action" onClick={onConnect} disabled={busy}>
+          {busy ? "Conectando…" : "Conectar wallet"}
+        </button>
+      </div>
+    );
+  }
+
+  // sin-fondos
+  if (mode === "session") {
+    return (
+      <div className="notice">
+        Tu clave de sesión no tiene fondos. Una sola transacción desde tu wallet
+        y después pintas sin confirmar nada.
+        <br />
+        <button className="notice-action" onClick={onFund} disabled={busy}>
+          {busy ? "Fondeando…" : "Fondear sesión (2 MON)"}
+        </button>
+      </div>
+    );
+  }
+
+  if (mode === "app") {
+    return (
+      <div className="notice notice-warn">
+        Esta wallet no tiene fondos. Pide MON en{" "}
+        <a href="https://faucet.monad.xyz" target="_blank" rel="noreferrer">
+          faucet.monad.xyz
+        </a>{" "}
+        para esta dirección:
+        <br />
+        <code className="mono">{burnerAddress}</code>
+      </div>
+    );
+  }
+
+  return (
+    <div className="notice notice-warn">
+      Tu wallet no tiene MON de testnet. Pide en{" "}
+      <a href="https://faucet.monad.xyz" target="_blank" rel="noreferrer">
+        faucet.monad.xyz
+      </a>
+      .
     </div>
   );
 }

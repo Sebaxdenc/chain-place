@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CONFIG, xyToIdx } from "../config";
+import { IconExpand } from "./Icon";
 
 interface Props {
   onCanvasReady: (canvas: HTMLCanvasElement) => void;
@@ -156,20 +157,22 @@ export function CanvasView({ onCanvasReady, selected, onSelect }: Props) {
       <div className="zoom-controls">
         {zoomedIn && (
           <button
-            className="zoom-btn"
+            className="icon-btn"
             onClick={() => {
               onSelect(null);
               changeZoom(fitZoom);
             }}
+            aria-label="Ver el lienzo completo"
           >
-            ⤢ todo
+            <IconExpand size={18} />
           </button>
         )}
         {ZOOM_LEVELS.map((level) => (
           <button
             key={level}
-            className={level === zoom ? "zoom-btn active" : "zoom-btn"}
+            className="icon-btn"
             onClick={() => changeZoom(level)}
+            aria-pressed={level === zoom}
           >
             {level === ZOOM_IN ? "1×" : "2×"}
           </button>

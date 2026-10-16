@@ -1,8 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { CONFIG, configErrors } from "./config";
+import { CONFIG, configErrors, mixedContentWarning } from "./config";
 import { PALETTE } from "./palette";
 import { CanvasRenderer } from "./lib/renderer";
-import { RelayClient, type RelayStats, type RelayStatus } from "./lib/relay";
+import {
+  RelayClient,
+  type CanvasSource,
+  type RelayHandlers,
+  type RelayStats,
+  type RelayStatus,
+} from "./lib/relay";
+import { DirectClient } from "./lib/direct";
 import { Painter, type PainterState } from "./lib/painter";
 import { resolveBurner, type WalletOrigin } from "./lib/wallet";
 import { CanvasView } from "./components/CanvasView";
@@ -74,7 +81,7 @@ function Canvas() {
     const renderer = new CanvasRenderer(canvasEl);
     rendererRef.current = renderer;
 
-    const relay = new RelayClient(CONFIG.relayUrl, {
+    const handlers: RelayHandlers = {
       onSnapshot: (colors) => {
         renderer.setSnapshot(colors);
         setPending(renderer.pendingCount());
@@ -96,11 +103,18 @@ function Canvas() {
         /* el feed de pintores lo usa la vista del proyector (paso 6) */
       },
       onStatus: setStatus,
-    });
-    relay.connect();
+    };
+
+    // Con relay configurado lo usamos; sin él, hablamos directo con Monad.
+    // Las dos fuentes cumplen la misma interfaz, así que a partir de aquí da
+    // igual cuál sea.
+    const source: CanvasSource = CONFIG.relayUrl
+      ? new RelayClient(CONFIG.relayUrl, handlers)
+      : new DirectClient(handlers);
+    source.connect();
 
     return () => {
-      relay.close();
+      source.close();
       renderer.dispose();
       rendererRef.current = null;
     };
@@ -151,6 +165,10 @@ function Canvas() {
         lastLatencyMs={lastLatencyMs}
         origin={origin}
       />
+
+      {mixedContentWarning && (
+        <div className="banner error">{mixedContentWarning}</div>
+      )}
 
       <CanvasView
         onCanvasReady={setCanvasEl}

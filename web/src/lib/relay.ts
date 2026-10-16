@@ -19,6 +19,14 @@ export interface PaintRecord {
 
 export type RelayStatus = "conectando" | "conectado" | "desconectado";
 
+/** Lo que App necesita de una fuente de datos del lienzo, sea el relay o la
+ *  cadena directamente. Tener la misma interfaz permite cambiar de una a otra
+ *  sin que App se entere. */
+export interface CanvasSource {
+  connect(): void;
+  close(): void;
+}
+
 export interface RelayHandlers {
   /** Lienzo completo. Llega al conectar y en cada re-sincronización. */
   onSnapshot(colors: Uint8Array): void;
@@ -36,7 +44,7 @@ export interface RelayHandlers {
  * sola conexión a Monad. Si cada celular se suscribiera directo al RPC, los
  * 15-25 req/s del endpoint público se agotarían con un puñado de usuarios.
  */
-export class RelayClient {
+export class RelayClient implements CanvasSource {
   private socket?: WebSocket;
   private reconnectDelay = 500;
   private closed = false;

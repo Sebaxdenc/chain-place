@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { parseEther } from "viem";
 import { CONFIG, configErrors, mixedContentWarning } from "./config";
 import { PALETTE } from "./palette";
 import { CanvasRenderer } from "./lib/renderer";
@@ -25,11 +24,8 @@ import { CanvasView } from "./components/CanvasView";
 import { Palette } from "./components/Palette";
 import { StatusBar } from "./components/StatusBar";
 import { ModePicker } from "./components/ModePicker";
+import { SessionCard } from "./components/SessionCard";
 import { IconCheck, IconX } from "./components/Icon";
-
-/** Cuánto MON manda la wallet del usuario a la clave de sesión.
- *  A ~0.0095 MON por píxel, 2 MON dan para unos 210. */
-const SESSION_FUNDING = parseEther("2");
 
 export default function App() {
   if (configErrors.length > 0) return <SetupScreen missing={configErrors} />;
@@ -199,30 +195,53 @@ function Canvas() {
 
   /** Conecta (si hace falta) y manda MON de la wallet del usuario a la clave
    *  de sesión. Una sola transacción, y después se pinta sin confirmaciones. */
-  const fundSession = useCallback(async () => {
+  const fundSession = useCallback(
+    async (amountWei: bigint) => {
+      setBusy(true);
+      setActionError(null);
+      try {
+        const from = walletAddress ?? (await connectInjected());
+        setWalletAddress(from);
+        await sendValue(from, burner.account.address, amountWei);
+
+        // La transferencia confirma en ~600ms, pero damos varios intentos por
+        // si la red va lenta. Sin esto habría que esperar al intervalo de 15s
+        // y parecería que el fondeo no funcionó.
+        const sender = senderRef.current;
+        if (sender instanceof LocalPainter) {
+          for (let i = 0; i < 6; i++) {
+            await new Promise((r) => setTimeout(r, 700));
+            await sender.refresh();
+          }
+        }
+      } catch (error) {
+        setActionError(describeError(error));
+      } finally {
+        setBusy(false);
+      }
+    },
+    [walletAddress, burner.account.address],
+  );
+
+  /** Devuelve el saldo de la sesión a la wallet del usuario. */
+  const sweepSession = useCallback(async () => {
+    const sender = senderRef.current;
+    if (!(sender instanceof LocalPainter) || !walletAddress) return;
+
     setBusy(true);
     setActionError(null);
     try {
-      const from = walletAddress ?? (await connectInjected());
-      setWalletAddress(from);
-      await sendValue(from, burner.account.address, SESSION_FUNDING);
-
-      // La transferencia confirma en ~600ms, pero damos varios intentos por si
-      // la red va lenta. Sin esto habría que esperar al intervalo de 15s y
-      // parecería que el fondeo no funcionó.
-      const sender = senderRef.current;
-      if (sender instanceof LocalPainter) {
-        for (let i = 0; i < 6; i++) {
-          await new Promise((r) => setTimeout(r, 700));
-          await sender.refresh();
-        }
+      await sender.sweepTo(walletAddress);
+      for (let i = 0; i < 4; i++) {
+        await new Promise((r) => setTimeout(r, 700));
+        await sender.refresh();
       }
     } catch (error) {
       setActionError(describeError(error));
     } finally {
       setBusy(false);
     }
-  }, [walletAddress, burner.account.address]);
+  }, [walletAddress]);
 
   const confirmPaint = useCallback(() => {
     const renderer = rendererRef.current;
@@ -272,14 +291,28 @@ function Canvas() {
 
       {actionError && <div className="notice notice-warn">{actionError}</div>}
 
-      <Blocker
-        mode={mode}
-        sender={senderState}
-        busy={busy}
-        burnerAddress={burner.account.address}
-        onConnect={connect}
-        onFund={fundSession}
-      />
+      {/* En modo sesión sin fondos, el bloqueo ES la tarjeta de sesión: lleva
+          el selector de monto y la dirección de destino a la vista. */}
+      {mode === "session" && senderState?.blocked === "sin-fondos" ? (
+        <SessionCard
+          burnerAddress={burner.account.address}
+          walletAddress={walletAddress}
+          balanceWei={senderState.balanceWei}
+          paintsLeft={senderState.paintsLeft}
+          funded={false}
+          busy={busy}
+          onFund={fundSession}
+          onSweep={sweepSession}
+        />
+      ) : (
+        <Blocker
+          mode={mode}
+          sender={senderState}
+          busy={busy}
+          burnerAddress={burner.account.address}
+          onConnect={connect}
+        />
+      )}
 
       <CanvasView
         onCanvasReady={setCanvasEl}
@@ -324,6 +357,20 @@ function Canvas() {
           onSelect={chooseMode}
           onClose={() => setShowModes(false)}
           dismissible={mode !== null}
+          footer={
+            mode === "session" && senderState ? (
+              <SessionCard
+                burnerAddress={burner.account.address}
+                walletAddress={walletAddress}
+                balanceWei={senderState.balanceWei}
+                paintsLeft={senderState.paintsLeft}
+                funded={senderState.paintsLeft > 0}
+                busy={busy}
+                onFund={fundSession}
+                onSweep={sweepSession}
+              />
+            ) : undefined
+          }
         />
       )}
     </div>
@@ -337,14 +384,12 @@ function Blocker({
   busy,
   burnerAddress,
   onConnect,
-  onFund,
 }: {
   mode: WalletMode | null;
   sender: SenderState | null;
   busy: boolean;
   burnerAddress: `0x${string}`;
   onConnect: () => void;
-  onFund: () => void;
 }) {
   if (!sender || sender.blocked === null) return null;
 
@@ -369,20 +414,8 @@ function Blocker({
     );
   }
 
-  // sin-fondos
-  if (mode === "session") {
-    return (
-      <div className="notice">
-        Tu clave de sesión no tiene fondos. Una sola transacción desde tu wallet
-        y después pintas sin confirmar nada.
-        <br />
-        <button className="notice-action" onClick={onFund} disabled={busy}>
-          {busy ? "Fondeando…" : "Fondear sesión (2 MON)"}
-        </button>
-      </div>
-    );
-  }
-
+  // sin-fondos. El caso de "session" lo cubre SessionCard, que trae selector
+  // de monto y dirección de destino.
   if (mode === "app") {
     return (
       <div className="notice notice-warn">

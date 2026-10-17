@@ -9,6 +9,8 @@ interface Props {
   onClose: () => void;
   /** Si es la primera vez, no se puede cerrar sin elegir. */
   dismissible: boolean;
+  /** Contenido extra bajo la lista, p. ej. la gestión de la sesión. */
+  footer?: React.ReactNode;
 }
 
 interface ModeInfo {
@@ -52,6 +54,7 @@ export function ModePicker({
   onSelect,
   onClose,
   dismissible,
+  footer,
 }: Props) {
   const sheetRef = useRef<HTMLDivElement>(null);
 
@@ -130,6 +133,8 @@ export function ModePicker({
             );
           })}
         </div>
+
+        {footer}
 
         {dismissible && (
           <button className="sheet-close" onClick={onClose}>
